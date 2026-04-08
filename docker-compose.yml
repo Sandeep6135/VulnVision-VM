@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  openvas:
+    image: greenbone/openvas:latest
+    container_name: vulnvision_scanner
+    environment:
+      OPENVAS_STORAGE_DRIVER: libvulnvision-vm
+      OPENVAS_REDIS_URL: redis://redis:6379
+      OPENVAS_LISTENING_PORT: 9392
+    ports:
+      - "9392:9392"
+    volumes:
+      - openvas_data:/data
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - vulnvision_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9392/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: vulnvision_cache
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - vulnvision_network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: vulnvision_db
+    environment:
+      POSTGRES_DB: openvas
+      POSTGRES_USER: openvas
+      POSTGRES_PASSWORD: OpenVAS123!
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - vulnvision_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openvas"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  oscap:
+    image: openscap/openscap:latest
+    container_name: vulnvision_compliance
+    volumes:
+      - ./compliance/:/compliance:ro
+      - oscap_reports:/reports
+    networks:
+      - vulnvision_network
+
+  nmap:
+    image: networkstatic/nmap:latest
+    container_name: vulnvision_discovery
+    entrypoint: /bin/sh
+    volumes:
+      - ./discovery/:/discovery:ro
+      - ./reports/:/reports
+    networks:
+      - vulnvision_network
+
+volumes:
+  openvas_data:
+  redis_data:
+  postgres_data:
+  oscap_reports:
+
+networks:
+  vulnvision_network:
+    driver: bridge
